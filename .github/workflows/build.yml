@@ -1,4 +1,4 @@
-name: Validate and build experimental container
+name: Validate vendor installation
 on:
   push:
     branches: [main]
@@ -6,26 +6,29 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-  packages: write
-  security-events: write
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
-      - name: Require verified upstream SHA-256
+      - name: Require reviewed upstream SHA-256
         id: checksum
+        shell: bash
         run: |
           value="$(grep -Ev '^#|^[[:space:]]*$' SHA256SUM | head -n 1)"
-          if ! printf '%s' "$value" | grep -Eq '^[a-fA-F0-9]{64}$'; then
+          if ! [[ "$value" =~ ^[a-fA-F0-9]{64}$ ]]; then
             echo 'A reviewed 64-character GWN archive SHA-256 is required.' >&2
             exit 1
           fi
           echo "sha256=$value" >> "$GITHUB_OUTPUT"
-      - name: Build (experimental; no publishing)
+      - name: Run official vendor installer in Docker build
         run: |
-          docker build -f Containerfile --build-arg GWN_VERSION="$(cat VERSION)" \
-            --build-arg GWN_SHA256="${{ steps.checksum.outputs.sha256 }}" -t gwn-manager:test .
-      # Security guard: NEVER publish a placeholder runtime as a working GHCR image.
-      # Add a real install and functional integration smoke test before enabling publishing.
+          docker build --progress=plain -f Containerfile \
+            --build-arg GWN_VERSION="$(cat VERSION)" \
+            --build-arg GWN_SHA256="${{ steps.checksum.outputs.sha256 }}" \
+            -t gwn-manager:installer-test .
+      - name: Check installed executable exists
+        run: docker run --rm --entrypoint /bin/bash gwn-manager:installer-test -c 'test -x /gwn/gwn'
+      # No GHCR push until lifecycle, data persistence and actual HTTP smoke tests pass.
