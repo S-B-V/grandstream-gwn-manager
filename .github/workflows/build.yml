@@ -1,0 +1,31 @@
+name: Validate and build experimental container
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Require verified upstream SHA-256
+        id: checksum
+        run: |
+          value="$(grep -Ev '^#|^[[:space:]]*$' SHA256SUM | head -n 1)"
+          if ! printf '%s' "$value" | grep -Eq '^[a-fA-F0-9]{64}$'; then
+            echo 'A reviewed 64-character GWN archive SHA-256 is required.' >&2
+            exit 1
+          fi
+          echo "sha256=$value" >> "$GITHUB_OUTPUT"
+      - name: Build (experimental; no publishing)
+        run: |
+          docker build -f Containerfile --build-arg GWN_VERSION="$(cat VERSION)" \
+            --build-arg GWN_SHA256="${{ steps.checksum.outputs.sha256 }}" -t gwn-manager:test .
+      # Security guard: NEVER publish a placeholder runtime as a working GHCR image.
+      # Add a real install and functional integration smoke test before enabling publishing.
