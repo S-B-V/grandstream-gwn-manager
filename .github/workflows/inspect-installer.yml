@@ -1,0 +1,37 @@
+name: Inspect upstream installer
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - VERSION
+      - SHA256SUM
+      - scripts/inspect-installer.py
+      - .github/workflows/inspect-installer.yml
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and verify original archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '\r\n' < VERSION)"
+          checksum="$(tr -d '\r\n' < SHA256SUM)"
+          [[ "$version" =~ ^[0-9]+(\.[0-9]+)+$ ]]
+          [[ "$checksum" =~ ^[[:xdigit:]]{64}$ ]]
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 \
+            "https://firmware.grandstream.com/GWN_Manager-${version}-AlmaLinux9.tar.gz" \
+            --output /tmp/gwn-manager.tar.gz
+          printf '%s  %s\n' "$checksum" /tmp/gwn-manager.tar.gz | sha256sum --check --status
+      - name: Inventory installer (no execution)
+        run: python3 scripts/inspect-installer.py /tmp/gwn-manager.tar.gz inspect-report
+      - name: Upload inspection report
+        uses: actions/upload-artifact@v4
+        with:
+          name: gwn-installer-inspection
+          path: inspect-report/
+          retention-days: 7
