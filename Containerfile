@@ -2,7 +2,7 @@
 FROM almalinux:9
 ARG GWN_VERSION=1.1.39.8
 ARG GWN_SHA256
-RUN dnf -y install ca-certificates curl tar gzip procps-ng hostname iproute && dnf clean all
+RUN dnf -y upgrade --refresh && dnf -y install ca-certificates curl-minimal tar gzip procps-ng hostname iproute && dnf clean all
 WORKDIR /tmp/gwn-installer
 RUN test -n "$GWN_SHA256" || (echo 'GWN_SHA256 must be set to a reviewed checksum' >&2; exit 1)
 RUN curl --fail --location --retry 3 --proto '=https' --tlsv1.2 \
