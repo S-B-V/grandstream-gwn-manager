@@ -3,7 +3,7 @@
 # Experimental container using the official Grandstream installer.
 # Do not replace the vendor installation procedure with direct RPM extraction.
 
-FROM almalinux:9
+FROM almalinux:10
 
 ARG GWN_VERSION=1.1.39.8
 ARG GWN_SHA256
