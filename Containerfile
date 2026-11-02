@@ -61,7 +61,8 @@ RUN set -eux; \
     test -x /gwn/gwn
 
 COPY scripts/healthcheck.sh /usr/local/bin/healthcheck
-RUN chmod 755 /usr/local/bin/healthcheck
+COPY scripts/entrypoint.sh /usr/local/bin/entrypoint
+RUN chmod 755 /usr/local/bin/healthcheck /usr/local/bin/entrypoint
 
 HEALTHCHECK --interval=30s --timeout=10s \
   --start-period=120s --retries=3 \
@@ -78,7 +79,8 @@ STOPSIGNAL SIGTERM
 # Experimental startup.
 # The vendor launcher may daemonize its services.
 # A proper process supervisor and runtime health checks are still required.
-CMD ["/bin/bash", "-c", "set -e; /gwn/gwn start; exec sleep infinity"]
+#CMD ["/bin/bash", "-c", "set -e; /gwn/gwn start; exec sleep infinity"]
+ENTRYPOINT ["/usr/local/bin/entrypoint"]
 
 LABEL org.opencontainers.image.title="Grandstream GWN Manager" \
       org.opencontainers.image.description="Experimental Grandstream GWN Manager container using the official vendor installer" \
