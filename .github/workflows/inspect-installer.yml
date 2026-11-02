@@ -30,7 +30,7 @@ jobs:
       - name: Inventory installer (no execution)
         run: python3 scripts/inspect-installer.py /tmp/gwn-manager.tar.gz inspect-report
       - name: Upload inspection report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gwn-installer-inspection
           path: inspect-report/
