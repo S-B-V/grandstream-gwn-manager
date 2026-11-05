@@ -1,3 +1,4 @@
+# EXPERIMENTAL. Do not apply until image is built, audited, and clean-bootstrap tested.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -9,22 +10,13 @@ metadata:
   name: gwn-manager
   namespace: gwn-manager
 spec:
-  type: ClusterIP
   selector:
     app: gwn-manager
+  type: ClusterIP
   ports:
-    - name: https
-      port: 8443
-      targetPort: 8443
-      protocol: TCP
-    - name: device-tcp
-      port: 10014
-      targetPort: 10014
-      protocol: TCP
-    - name: gwn771x-http
-      port: 8000
-      targetPort: 8000
-      protocol: TCP
+    - {name: https, port: 8443, targetPort: 8443, protocol: TCP}
+    - {name: device-tcp, port: 10014, targetPort: 10014, protocol: TCP}
+    - {name: device-http, port: 8000, targetPort: 8000, protocol: TCP}
 ---
 apiVersion: v1
 kind: Service
@@ -33,12 +25,9 @@ metadata:
   namespace: gwn-manager
 spec:
   clusterIP: None
-  selector:
-    app: gwn-manager
+  selector: {app: gwn-manager}
   ports:
-    - name: https
-      port: 8443
-      targetPort: 8443
+    - {name: https, port: 8443, targetPort: 8443}
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -48,119 +37,85 @@ metadata:
 spec:
   serviceName: gwn-manager-headless
   replicas: 1
-  updateStrategy:
-    type: OnDelete
+  updateStrategy: {type: OnDelete}
   selector:
-    matchLabels:
-      app: gwn-manager
+    matchLabels: {app: gwn-manager}
   template:
     metadata:
-      labels:
-        app: gwn-manager
+      labels: {app: gwn-manager}
     spec:
       terminationGracePeriodSeconds: 90
       securityContext:
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
       initContainers:
-        - name: init-data
+        - name: initialize-pvcs-and-pki
           image: ghcr.io/s-b-v/grandstream-gwn-manager:1.1.39.8
           imagePullPolicy: IfNotPresent
-          command: ["/bin/bash", "-euo", "pipefail", "-c"]
+          command: [/bin/bash, -euo, pipefail, -c]
           args:
             - |
               shopt -s nullglob dotglob
-              files=(/mnt/data/*)
-              if (( ${#files[@]} == 0 )); then
-                echo 'Initializing empty data volume'
-                cp -a /opt/gwn-defaults/data/. /mnt/data/
-                chown -R 1000:1000 /mnt/data
+              data=(/gwn/data/*); conf=(/gwn/conf/*)
+              if (( ${#data[@]} == 0 && ${#conf[@]} == 0 )); then
+                echo 'Initializing fresh volumes'
+                cp -a /opt/gwn-defaults/data/. /gwn/data/
+                cp -a /opt/gwn-defaults/conf/. /gwn/conf/
+                /usr/local/bin/pki-bootstrap --fresh
+                chown -R 1000:1000 /gwn/data /gwn/conf
+              elif [[ -e /gwn/data/.pki-bootstrap-complete && -s /gwn/conf/gwn.conf ]]; then
+                echo 'Existing initialized volumes, no changes'
               else
-                echo 'Data volume populated; not overwriting'
+                echo 'Partial initialization detected; refusing to overwrite persistent data' >&2
+                exit 1
               fi
           securityContext:
             runAsUser: 0
             allowPrivilegeEscalation: false
-            capabilities:
-              drop: [ALL]
+            capabilities: {drop: [ALL]}
           volumeMounts:
-            - name: data
-              mountPath: /mnt/data
-        - name: init-conf
-          image: ghcr.io/s-b-v/grandstream-gwn-manager:1.1.39.8
-          imagePullPolicy: IfNotPresent
-          command: ["/bin/bash", "-euo", "pipefail", "-c"]
-          args:
-            - |
-              shopt -s nullglob dotglob
-              files=(/mnt/conf/*)
-              if (( ${#files[@]} == 0 )); then
-                echo 'Initializing empty config volume'
-                cp -a /opt/gwn-defaults/conf/. /mnt/conf/
-                chown -R 1000:1000 /mnt/conf
-              else
-                echo 'Config volume populated; not overwriting'
-              fi
-          securityContext:
-            runAsUser: 0
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: [ALL]
-          volumeMounts:
-            - name: conf
-              mountPath: /mnt/conf
+            - {name: data, mountPath: /gwn/data}
+            - {name: conf, mountPath: /gwn/conf}
       containers:
         - name: gwn-manager
           image: ghcr.io/s-b-v/grandstream-gwn-manager:1.1.39.8
           imagePullPolicy: IfNotPresent
           ports:
-            - name: https
-              containerPort: 8443
-            - name: device-tcp
-              containerPort: 10014
-            - name: gwn771x-http
-              containerPort: 8000
+            - {name: https, containerPort: 8443, protocol: TCP}
+            - {name: device-tcp, containerPort: 10014, protocol: TCP}
+            - {name: device-http, containerPort: 8000, protocol: TCP}
           startupProbe:
-            exec:
-              command: ["/usr/local/bin/healthcheck"]
+            exec: {command: [/usr/local/bin/healthcheck]}
             periodSeconds: 10
-            failureThreshold: 30
+            failureThreshold: 40
             timeoutSeconds: 10
           readinessProbe:
-            exec:
-              command: ["/usr/local/bin/healthcheck"]
+            exec: {command: [/usr/local/bin/healthcheck]}
             periodSeconds: 15
             failureThreshold: 2
             timeoutSeconds: 10
           livenessProbe:
-            exec:
-              command: ["/usr/local/bin/healthcheck"]
+            exec: {command: [/usr/local/bin/healthcheck]}
             periodSeconds: 30
             failureThreshold: 3
             timeoutSeconds: 10
-          volumeMounts:
-            - name: data
-              mountPath: /gwn/data
-            - name: conf
-              mountPath: /gwn/conf
           resources:
-            requests:
-              cpu: 500m
-              memory: 1Gi
-            limits:
-              memory: 4Gi
+            requests: {cpu: 500m, memory: 1Gi}
+            limits: {memory: 4Gi}
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - {name: data, mountPath: /gwn/data}
+            - {name: conf, mountPath: /gwn/conf}
   volumeClaimTemplates:
-    - metadata:
-        name: data
+    - metadata: {name: data}
       spec:
         accessModes: [ReadWriteOnce]
         resources:
-          requests:
-            storage: 10Gi
-    - metadata:
-        name: conf
+          requests: {storage: 10Gi}
+    - metadata: {name: conf}
       spec:
         accessModes: [ReadWriteOnce]
         resources:
-          requests:
-            storage: 2Gi
+          requests: {storage: 2Gi}

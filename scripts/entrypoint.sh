@@ -1,65 +1,24 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-
-stopping=0
-child_pid=""
-
-shutdown() {
-    local exit_code="${1:-0}"
-    if (( stopping )); then
-        return
-    fi
-    stopping=1
-    trap - TERM INT
-    echo 'GWN Manager: shutdown requested' >&2
-    if [[ -n "$child_pid" ]]; then
-        kill "$child_pid" 2>/dev/null || true
-        wait "$child_pid" 2>/dev/null || true
-    fi
-    # Limit vendor shutdown time so that a hung service cannot block forever.
-    if ! timeout --signal=TERM --kill-after=5s 45s /gwn/gwn stop; then
-        echo 'GWN Manager: vendor shutdown returned an error or timed out' >&2
-        exit 1
-    fi
-    echo 'GWN Manager: vendor shutdown finished' >&2
-    exit "$exit_code"
+child=''; stopping=0
+shutdown(){
+  (( stopping == 0 )) || return 0
+  stopping=1; trap - TERM INT
+  [[ -z "$child" ]] || { kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; }
+  timeout --signal=TERM --kill-after=5s 45s /gwn/gwn stop || true
+  exit "${1:-0}"
 }
-trap shutdown TERM INT
-
-# The vendor launcher starts background services and returns.
-echo 'GWN Manager: starting vendor services' >&2
-/gwn/gwn start
-
-echo 'GWN Manager: waiting for readiness (up to 180 seconds)' >&2
-ready=0
-for (( i=0; i<18; i++ )); do
-    if /usr/local/bin/healthcheck; then
-        ready=1
-        break
-    fi
-    sleep 10 & child_pid=$!
-    wait "$child_pid" || true
-    child_pid=""
+trap 'shutdown 0' TERM INT
+[[ -s /gwn/conf/gwn.conf ]] || { echo 'Config volume not initialized' >&2; exit 1; }
+[[ -e /gwn/data/.pki-bootstrap-complete ]] || { echo 'PKI not bootstrapped' >&2; exit 1; }
+/gwn/gwn start || shutdown 1
+for ((i=0;i<30;i++)); do
+  if /usr/local/bin/healthcheck; then break; fi
+  sleep 10 & child=$!; wait "$child" || true; child=''
+  if (( i==29 )); then shutdown 1; fi
 done
-if (( ! ready )); then
-    echo 'GWN Manager: services did not become healthy in 180 seconds' >&2
-    shutdown 1
-fi
-
-echo 'GWN Manager: healthy; monitoring services' >&2
-failures=0
-while true; do
-    sleep 10 & child_pid=$!
-    wait "$child_pid" || true
-    child_pid=""
-    if /usr/local/bin/healthcheck; then
-        failures=0
-    else
-        (( failures+=1 ))
-        echo "GWN Manager: failed health checks: $failures/3" >&2
-        if (( failures >= 3 )); then
-            echo 'GWN Manager: persistent health failure; stopping services' >&2
-            shutdown 1
-        fi
-    fi
+fail=0
+while :; do
+  sleep 10 & child=$!; wait "$child" || true; child=''
+  if /usr/local/bin/healthcheck; then fail=0; else ((fail+=1)); ((fail<3)) || shutdown 1; fi
 done
