@@ -25,7 +25,12 @@ jobs:
           fi
           echo "sha256=$value" >> "$GITHUB_OUTPUT"
       - name: Shell syntax checks
-        run: bash -n scripts/entrypoint.sh scripts/healthcheck.sh scripts/ci-runtime-test.sh
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' script; do
+            bash -n "$script"
+          done < <(find scripts -maxdepth 1 -type f -name '*.sh' -print0)
       - name: Build image using official vendor installer
         run: |
           docker build --progress=plain -f Containerfile \
@@ -36,10 +41,14 @@ jobs:
         run: |
           docker run --rm --entrypoint /bin/bash gwn-manager:installer-test -euc '
             test -x /gwn/gwn
-            test -d /opt/gwn-defaults/data/mysql/data
-            test -f /opt/gwn-defaults/conf/gwn.conf
+            test ! -e /opt/gwn-defaults/data/mysql
+            test -d /opt/gwn-defaults/data/mysql_default/data
+            test -s /opt/gwn-defaults/conf/gwn.conf
+            test -s /opt/gwn-defaults/conf/gwn/local_env.cfg
             test -x /usr/local/bin/healthcheck
             test -x /usr/local/bin/entrypoint
+            test -x /usr/local/bin/configure-public-url
+            test -x /usr/local/bin/pki-bootstrap
           '
       - name: Test runtime lifecycle and volume recreation
         timeout-minutes: 20
