@@ -67,7 +67,7 @@ jobs:
         run: bash scripts/ci-runtime-test.sh gwn-manager:tested
       - name: Login to GHCR after successful tests
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
