@@ -141,12 +141,14 @@ COPY --from=installer /export/defaults/conf/ /opt/gwn-defaults/conf/
 
 # Runtime scripts.
 COPY scripts/entrypoint.sh /usr/local/bin/entrypoint
+COPY scripts/java-memory-limited.sh /usr/local/bin/gwn-java-memory
 COPY scripts/healthcheck.sh /usr/local/bin/healthcheck
 COPY scripts/pki-bootstrap.sh /usr/local/bin/pki-bootstrap
 COPY scripts/configure-public-url.sh /usr/local/bin/configure-public-url
 
 RUN chmod 755 \
       /usr/local/bin/entrypoint \
+      /usr/local/bin/gwn-java-memory \
       /usr/local/bin/healthcheck \
       /usr/local/bin/pki-bootstrap \
       /usr/local/bin/configure-public-url

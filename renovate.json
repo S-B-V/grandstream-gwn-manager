@@ -1,8 +1,59 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
+  "extends": [
+    "config:recommended"
+  ],
   "timezone": "Europe/Berlin",
-  "schedule": ["before 7am on monday"],
-  "labels": ["dependencies"],
-  "enabledManagers": ["dockerfile", "github-actions"]
+  "labels": [
+    "dependencies"
+  ],
+  "automerge": false,
+  "enabledManagers": [
+    "dockerfile",
+    "github-actions",
+    "custom.regex"
+  ],
+  "customDatasources": {
+    "gwn-manager": {
+      "defaultRegistryUrlTemplate": "https://www.grandstream.com/support/tools",
+      "format": "html"
+    }
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^VERSION$/"
+      ],
+      "matchStrings": [
+        "^(?<currentValue>[0-9]+(?:\\.[0-9]+){3})\\s*$"
+      ],
+      "depNameTemplate": "grandstream-gwn-manager",
+      "datasourceTemplate": "custom.gwn-manager",
+      "versioningTemplate": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)\\.(?<build>\\d+)$"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchPackageNames": [
+        "grandstream-gwn-manager"
+      ],
+      "prBodyNotes": [
+        "The Prepare upstream release PR workflow calculates the official archive SHA-256 and synchronizes build/deployment references on this branch. Wait for its completion and the build/runtime checks before merging. Merge triggers automatic GHCR publication."
+      ],
+      "extractVersion": "^https://firmware\\.grandstream\\.com/GWN_Manager-(?<version>[0-9]+(?:\\.[0-9]+){3})-AlmaLinux9\\.tar\\.gz$"
+    },
+    {
+      "matchManagers": [
+        "dockerfile",
+        "github-actions"
+      ],
+      "schedule": [
+        "before 7am on monday"
+      ]
+    }
+  ],
+  "gitIgnoredAuthors": [
+    "41898282+github-actions[bot]@users.noreply.github.com"
+  ]
 }

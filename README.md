@@ -1,6 +1,6 @@
 # Grandstream GWN Manager - local experimental handover package
 
-**Start with [`README-k8s.md`](README-k8s.md)** for deployment, the 4 GiB memory profile, and updating an existing installation. No changes were pushed to GitHub.
+**Start with [`README-k8s.md`](README-k8s.md)** for deployment, the 4 GiB memory profile, and updating an existing installation. See [`README-ci.md`](README-ci.md) for Renovate version/checksum PRs and automatic tested GHCR builds after merge. No changes were pushed to GitHub.
 
 Status: **UNTESTED fresh-volume PKI, NOT publishable**. Known serious concern: installer-initialized DB contents in image defaults require sensitive-data and redistribution review. Do not treat a passing key-file audit as security approval.
 

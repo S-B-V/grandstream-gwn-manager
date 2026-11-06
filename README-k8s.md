@@ -2,7 +2,7 @@
 
 The image comes from the **official** GWN Manager installer. The pod has a single replica. `OnDelete` avoids surprise controller upgrades. Startup, readiness and liveness use the existing healthcheck.
 
-**Do not deploy as-is:** GHCR publishing has not been enabled, the image tag is a placeholder until a verified release exists, controller IP and device traffic ports/protocols must be reviewed, credentials must be rotated, and security/redistribution rights must be reviewed. The vendor services' capability to run without root has not been validated. This manifest intentionally does not declare non-root compatibility. The image runs with the default vendor permissions; init containers require UID 0 to set ownership. Harden once validated.
+**Do not deploy as-is:** review the automatic GHCR release setup in `README-ci.md`, verify the image tag or digest, and ensure controller IP and device traffic ports/protocols must be reviewed, credentials must be rotated, and security/redistribution rights must be reviewed. The vendor services' capability to run without root has not been validated. This manifest intentionally does not declare non-root compatibility. The image runs with the default vendor permissions; init containers require UID 0 to set ownership. Harden once validated.
 
 The init container populates *truly empty* PVCs from `/opt/gwn-defaults/{data,conf}` in the same image. It preserves existing initialized data and certificates, and refuses partially initialized volumes. On every startup it installs the Java memory launcher and sets `java_bin` in `gwn.conf` as described below. Take backups before any migration. The `fsGroup` may be modified by the CSI implementation. The application owns `/gwn/data` and `/gwn/conf` (vendor UID 1000).
 

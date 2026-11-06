@@ -1,58 +1,80 @@
-name: Build and runtime validation
+name: Build, test and publish
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
-
+concurrency:
+  group: gwn-build-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v4
-      - name: Require reviewed upstream SHA-256
-        id: checksum
-        shell: bash
-        run: |
-          value="$(grep -Ev '^#|^[[:space:]]*$' SHA256SUM | head -n 1)"
-          if ! [[ "$value" =~ ^[a-fA-F0-9]{64}$ ]]; then
-            echo 'A reviewed 64-character GWN archive SHA-256 is required.' >&2
-            exit 1
-          fi
-          echo "sha256=$value" >> "$GITHUB_OUTPUT"
-      - name: Shell syntax checks
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Validate pinned release and automation
+        id: metadata
         shell: bash
         run: |
           set -euo pipefail
+          python3 scripts/sync-release.py --check
+          python3 -m unittest discover -s tests -v
+          python3 - <<'PY'
+          import json, os
+          lock = json.load(open('upstream.json'))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('version=' + lock['version'] + '\n')
+              output.write('sha256=' + lock['digest'][7:] + '\n')
+          PY
           while IFS= read -r -d '' script; do
             bash -n "$script"
           done < <(find scripts -maxdepth 1 -type f -name '*.sh' -print0)
-      - name: Build image using official vendor installer
+      - name: Build pinned official installer image
         run: |
           docker build --progress=plain -f Containerfile \
-            --build-arg GWN_VERSION="$(cat VERSION)" \
-            --build-arg GWN_SHA256="${{ steps.checksum.outputs.sha256 }}" \
-            -t gwn-manager:installer-test .
+            --build-arg GWN_VERSION="${{ steps.metadata.outputs.version }}" \
+            --build-arg GWN_SHA256="${{ steps.metadata.outputs.sha256 }}" \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --label "org.opencontainers.image.version=${{ steps.metadata.outputs.version }}" \
+            -t gwn-manager:tested .
       - name: Check pristine filesystem tree
         run: |
-          docker run --rm --entrypoint /bin/bash gwn-manager:installer-test -euc '
+          docker run --rm --entrypoint /bin/bash gwn-manager:tested -euc '
             test -x /gwn/gwn
             test ! -e /opt/gwn-defaults/data/mysql
             test -d /opt/gwn-defaults/data/mysql_default/data
             test -s /opt/gwn-defaults/conf/gwn.conf
             test -s /opt/gwn-defaults/conf/gwn/local_env.cfg
-            test -x /usr/local/bin/healthcheck
-            test -x /usr/local/bin/entrypoint
-            test -x /usr/local/bin/configure-public-url
-            test -x /usr/local/bin/pki-bootstrap
+            for tool in healthcheck entrypoint configure-public-url pki-bootstrap gwn-java-memory; do
+              test -x "/usr/local/bin/$tool"
+            done
           '
-      - name: Test runtime lifecycle and volume recreation
+      - name: Audit embedded key material
+        env:
+          ENGINE: docker
+        run: bash scripts/audit-image.sh gwn-manager:tested
+      - name: Runtime, memory limit, restart and volume persistence tests
         timeout-minutes: 20
-        run: bash scripts/ci-runtime-test.sh gwn-manager:installer-test
-      # Intentionally NO registry login, push, artifact containing vendor files,
-      # config archive upload, or environment dump. Publishing requires
-      # redistribution authorization and a review of bundled credentials.
+        run: bash scripts/ci-runtime-test.sh gwn-manager:tested
+      - name: Login to GHCR after successful tests
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the tested image
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          REPO: ${{ github.repository }}
+          GWN_VERSION: ${{ steps.metadata.outputs.version }}
+        run: bash scripts/publish-image.sh gwn-manager:tested

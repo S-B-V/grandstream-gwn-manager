@@ -11,6 +11,17 @@ shutdown(){
 trap 'shutdown 0' TERM INT
 [[ -s /gwn/conf/gwn.conf ]] || { echo 'Config volume not initialized' >&2; exit 1; }
 [[ -e /gwn/data/.pki-bootstrap-complete ]] || { echo 'PKI not bootstrapped' >&2; exit 1; }
+# Apply the same memory budget outside Kubernetes (including Docker CI).
+# Service login shells discard JVM environment variables; configure java_bin.
+grep -q '^java_bin=' /gwn/conf/gwn.conf
+if ! grep -qx 'java_bin=/gwn/conf/java-memory-limited' /gwn/conf/gwn.conf; then
+  if [[ ! -e /gwn/conf/gwn.conf.before-memory-profile ]]; then
+    cp -p /gwn/conf/gwn.conf /gwn/conf/gwn.conf.before-memory-profile
+    chmod 600 /gwn/conf/gwn.conf.before-memory-profile
+  fi
+fi
+install -o 1000 -g 1000 -m 0755 /usr/local/bin/gwn-java-memory /gwn/conf/java-memory-limited
+sed -i 's|^java_bin=.*|java_bin=/gwn/conf/java-memory-limited|' /gwn/conf/gwn.conf
 /gwn/gwn start || shutdown 1
 for ((i=0;i<30;i++)); do
   if /usr/local/bin/healthcheck; then break; fi

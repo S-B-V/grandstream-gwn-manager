@@ -84,7 +84,7 @@ original_fingerprint="$(fingerprint)"
 [[ -n "$original_fingerprint" ]] || fail 'Missing initial certificate fingerprint'
 
 start() {
-  docker run -d --name "$container" \
+  docker run -d --name "$container" --memory=4g --memory-swap=4g \
     -p "127.0.0.1:${GWN_PUBLIC_HTTPS_PORT}:8443" \
     -v "$data:/gwn/data" -v "$conf:/gwn/conf" \
     "$image" >/dev/null
@@ -98,7 +98,11 @@ start() {
       fail 'Container exited before readiness'
     fi
     if docker exec "$container" /usr/local/bin/healthcheck >/dev/null 2>&1; then
-      echo 'Application healthcheck passed'
+      docker exec "$container" /bin/bash -euc '
+        count=$(ps -eo args | grep -c "^/gwn/bin/jre/bin/java -Xms64m -Xmx512m " || true)
+        [[ "$count" == 4 ]]
+      '
+      echo 'Application healthcheck and four JVM heap caps passed' 
       return 0
     fi
     sleep 5
@@ -110,10 +114,11 @@ start() {
 stop() {
   echo 'Testing graceful shutdown...'
   docker stop --time 90 "$container" >/dev/null || fail 'docker stop failed'
-  local code running
+  local code running oom
   code="$(docker inspect -f '{{.State.ExitCode}}' "$container")"
   running="$(docker inspect -f '{{.State.Running}}' "$container")"
-  [[ "$code" == 0 && "$running" == false ]] || {
+  oom="$(docker inspect -f '{{.State.OOMKilled}}' "$container")"
+  [[ "$code" == 0 && "$running" == false && "$oom" == false ]] || {
     fail "Unexpected shutdown state: exit=$code running=$running"
   }
   echo 'Graceful shutdown passed'
