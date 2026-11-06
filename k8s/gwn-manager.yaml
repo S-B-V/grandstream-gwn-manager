@@ -4,6 +4,26 @@ metadata:
   name: gwn-manager
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gwn-java-memory
+  namespace: gwn-manager
+data:
+  java-memory-limited: |
+    #!/bin/bash
+    # Match the vendor's 4 GiB host profile even when /proc/meminfo shows VM RAM.
+    # Four JVM heaps share the limit with native memory, Node, and MariaDB.
+    set -euo pipefail
+    args=()
+    for arg in "$@"; do
+      case "$arg" in
+        -Xmx*|-Xms*) ;;
+        *) args+=("$arg") ;;
+      esac
+    done
+    exec /gwn/bin/jre/bin/java -Xms64m -Xmx512m "${args[@]}"
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: gwn-manager
@@ -121,6 +141,21 @@ spec:
                 echo 'CONF entries:' >&2; find /gwn/conf -mindepth 1 -maxdepth 1 -printf '%f\n' >&2
                 exit 1
               fi
+
+              # Apply to both fresh and existing initialized configuration PVCs.
+              # Login-shell service launchers discard container JVM environment
+              # variables, so use the vendor's java_bin setting instead.
+              echo 'Configure Java memory budget for the 4 GiB container'
+              grep -q '^java_bin=' /gwn/conf/gwn.conf
+              if ! grep -qx 'java_bin=/gwn/conf/java-memory-limited' /gwn/conf/gwn.conf; then
+                if [[ ! -e /gwn/conf/gwn.conf.before-memory-profile ]]; then
+                  cp -p /gwn/conf/gwn.conf /gwn/conf/gwn.conf.before-memory-profile
+                  chmod 600 /gwn/conf/gwn.conf.before-memory-profile
+                fi
+              fi
+              install -o 1000 -g 1000 -m 0755 \
+                /opt/gwn-memory/java-memory-limited /gwn/conf/java-memory-limited
+              sed -i 's|^java_bin=.*|java_bin=/gwn/conf/java-memory-limited|' /gwn/conf/gwn.conf
           securityContext:
             runAsUser: 0
             allowPrivilegeEscalation: false
@@ -131,6 +166,9 @@ spec:
               mountPath: /gwn/data
             - name: conf
               mountPath: /gwn/conf
+            - name: java-memory
+              mountPath: /opt/gwn-memory
+              readOnly: true
       containers:
         - name: gwn-manager
           image: ghcr.io/s-b-v/grandstream-gwn-manager:1.1.39.8
@@ -168,6 +206,7 @@ spec:
               cpu: 500m
               memory: 1Gi
             limits:
+              # Total container budget, including all four JVMs and other services.
               memory: 4Gi
           securityContext:
             runAsUser: 0
@@ -177,6 +216,11 @@ spec:
               mountPath: /gwn/data
             - name: conf
               mountPath: /gwn/conf
+      volumes:
+        - name: java-memory
+          configMap:
+            name: gwn-java-memory
+            defaultMode: 0444
   volumeClaimTemplates:
     - metadata:
         name: data
