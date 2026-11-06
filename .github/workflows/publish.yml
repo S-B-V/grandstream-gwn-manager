@@ -32,7 +32,7 @@ jobs:
     # Create this protected environment in repository Settings first.
     environment: ghcr-publish
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Validate version and reviewed checksum
         id: metadata
         shell: bash
@@ -51,6 +51,8 @@ jobs:
             --build-arg GWN_SHA256="${{ steps.metadata.outputs.sha256 }}" \
             -t gwn-manager:publish-candidate .
       - name: Audit embedded key material (fail closed)
+        env:
+          ENGINE: docker
         run: bash scripts/audit-image.sh gwn-manager:publish-candidate
       - name: Runtime, restart and volume persistence tests
         timeout-minutes: 20
