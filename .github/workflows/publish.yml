@@ -63,6 +63,11 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Inspect image manifest
+        run: |
+          docker image inspect gwn-manager:publish-candidate \
+            --format 'Architecture={{.Architecture}} OS={{.Os}}'
+          docker version
       - name: Push immutable version tag
         shell: bash
         env:
@@ -77,5 +82,5 @@ jobs:
             exit 1
           fi
           docker tag gwn-manager:publish-candidate "$repo:$VERSION"
-          docker push "$repo:$VERSION"
+          docker --debug push "$repo:$VERSION"
           echo "Published: $repo:$VERSION" >> "$GITHUB_STEP_SUMMARY"
