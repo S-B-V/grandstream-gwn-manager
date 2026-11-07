@@ -40,7 +40,7 @@ created_data=1
 docker volume create "$conf" >/dev/null
 created_conf=1
 
-# Same initialization order as the locally verified test-clean-local.sh:
+# Same initialization order as the locally verified bootstrap flow:
 # defaults -> mysql_default copy -> URL configuration -> PKI -> ownership.
 docker run --rm --entrypoint /bin/bash \
   -e GWN_ACCESS_ADDRESS -e GWN_PUBLIC_HOST -e GWN_PUBLIC_HTTPS_PORT \
