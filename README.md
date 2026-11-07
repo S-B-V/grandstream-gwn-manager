@@ -1,7 +1,19 @@
-# Grandstream GWN Manager - local experimental handover package
+# Grandstream GWN Manager Container
 
-**Start with [`README-k8s.md`](README-k8s.md)** for deployment, the 4 GiB memory profile, and updating an existing installation. See [`README-ci.md`](README-ci.md) for Renovate version/checksum PRs and automatic tested GHCR builds after merge. No changes were pushed to GitHub.
+Container image and Kubernetes deployment for [Grandstream GWN Manager](https://www.grandstream.com/), built from the official Linux installer.
 
-Status: **UNTESTED fresh-volume PKI, NOT publishable**. Known serious concern: installer-initialized DB contents in image defaults require sensitive-data and redistribution review. Do not treat a passing key-file audit as security approval.
+This repository provides:
 
-Basic use after review: copy the overlay into local repo, build with `podman build --network=host --build-arg GWN_SHA256="$(cat SHA256SUM)" -t localhost/gwn-manager:secure-test .`, then run `bash scripts/test-clean-local.sh` on dedicated new Podman volumes.
+- A container build for GWN Manager.
+- A Kubernetes StatefulSet with persistent application data and configuration.
+- Automated image builds and publication to GitHub Container Registry (GHCR).
+
+## Use
+
+The container image is published at `ghcr.io/s-b-v/grandstream-gwn-manager`.
+
+For Kubernetes installation and access, see [README-k8s.md](README-k8s.md).
+
+For using the automated image release process, see [README-ci.md](README-ci.md).
+
+The application is supplied by Grandstream; its own license and terms apply.
