@@ -2,7 +2,7 @@
 # Experimental community packaging.
 # Do not publish without authorization and security review.
 
-FROM almalinux:9 AS installer
+FROM almalinux:10 AS installer
 
 ARG GWN_VERSION=1.1.39.8
 ARG GWN_SHA256
@@ -97,7 +97,7 @@ RUN set -eu; \
 # Runtime image
 # ------------------------------------------------------------
 
-FROM almalinux:9
+FROM almalinux:10
 
 RUN groupadd -g 1000 gwn && \
     useradd \
