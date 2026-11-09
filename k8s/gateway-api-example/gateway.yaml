@@ -1,0 +1,29 @@
+# Example Gateway: adapt GatewayClass, hostname and address to your controller.
+# If you already have a shared Gateway, OMIT this resource and adjust HTTPRoute parentRefs.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gwn-example-gateway
+  namespace: gwn-manager
+spec:
+  gatewayClassName: REPLACE_GATEWAY_CLASS
+  listeners:
+    - name: http
+      hostname: gwn-ui.localhost.local
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https
+      hostname: gwn-ui.localhost.local
+      port: 443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: gwn-ui-tls
+      allowedRoutes:
+        namespaces:
+          from: Same

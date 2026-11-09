@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gwn-java-memory
+  namespace: gwn-manager
+data:
+  java-memory-limited: "#!/bin/bash\n# Four JVMs share a 4 GiB container limit with MariaDB and Node.\nset -euo\
+    \ pipefail\nargs=()\nfor arg in \"$@\"; do\n  case \"$arg\" in\n    -Xmx*|-Xms*) ;;\n    *) args+=(\"$arg\"\
+    ) ;;\n  esac\ndone\nexec /gwn/bin/jre/bin/java -Xms64m -Xmx512m \"${args[@]}\"\n"

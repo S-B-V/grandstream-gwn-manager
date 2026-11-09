@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gwn-manager
+  namespace: gwn-manager
+  annotations: {}
+spec:
+  type: LoadBalancer
+  selector:
+    app: gwn-manager
+  ports:
+  - name: device-tcp
+    port: 10014
+    targetPort: device-tcp
+    protocol: TCP
+  - name: device-http
+    port: 8000
+    targetPort: device-http
+    protocol: TCP
+  loadBalancerIP: 192.0.2.15

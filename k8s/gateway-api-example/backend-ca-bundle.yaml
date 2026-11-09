@@ -1,0 +1,17 @@
+# Optional: requires trust-manager and an issuer CA Secret in its trust namespace.
+# The referenced Secret must contain the public issuer certificate in tls.crt.
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: gwn-manager-backend-ca
+spec:
+  sources:
+    - secret:
+        name: REPLACE_CA_SECRET_IN_TRUST_NAMESPACE
+        key: tls.crt
+  target:
+    configMap:
+      key: ca.crt
+    namespaceSelector:
+      matchLabels:
+        gwn-example-trust: "true"

@@ -1,0 +1,16 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: gwn-manager
+  namespace: gwn-manager
+spec:
+  targetRefs:
+  - group: ''
+    kind: Service
+    name: gwn-manager-web
+  validation:
+    hostname: gwn.localhost.local
+    caCertificateRefs:
+    - group: ''
+      kind: ConfigMap
+      name: gwn-manager-backend-ca

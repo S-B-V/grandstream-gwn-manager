@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - configmap-java-memory.yaml
+  - service.yaml
+  - service-web.yaml
+  - statefulset.yaml
+  - certificate-ui.yaml
+  - certificate-backend.yaml
+  - gateway.yaml
+  - httproute.yaml
+  - httproute-redirect.yaml
+  - backendtlspolicy.yaml
+  - backend-ca-bundle.yaml

@@ -1,0 +1,14 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gwn-ui-tls
+  namespace: gwn-manager
+spec:
+  secretName: gwn-ui-tls
+  duration: 17520h
+  renewBefore: 720h
+  issuerRef:
+    name: REPLACE_CLUSTER_ISSUER
+    kind: ClusterIssuer
+  dnsNames:
+  - gwn-ui.localhost.local
