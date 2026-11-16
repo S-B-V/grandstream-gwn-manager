@@ -74,8 +74,6 @@ RUN set -eu; \
       --exclude='./scripts/prikey.pem' \
       -cf - . | tar -C /export/gwn -xf -; \
     \
-    # Exclude active installer database.
-    # Keep vendor mysql_default template for runtime bootstrap.
     tar -C /gwn/data \
       --exclude='./mysql' \
       --exclude='*.key' \
@@ -108,12 +106,8 @@ RUN groupadd -g 1000 gwn && \
       -s /bin/bash \
       -M gwn
 
-# Grandstream's bundled SSH daemon requires a dedicated
-# unprivileged account for privilege separation.
-#
-# This is required when GWNRC is enabled (gwnrc_enable=1).
-# Do not install the distribution OpenSSH server:
-# GWN Manager provides its own binary at /gwn/bin/sshd/sshd.
+# Required by Grandstream's bundled SSH daemon for
+# privilege separation when GWNRC is enabled.
 RUN groupadd --system sshd && \
     useradd --system \
       --gid sshd \
@@ -146,14 +140,13 @@ RUN dnf -y upgrade --refresh && \
       openssl && \
     dnf clean all
 
-# Copy application without the known private-key fixtures.
+# Copy application without known private-key fixtures.
 COPY --from=installer /export/gwn/ /gwn/
 
 # Vendor Java 17 security configuration.
-# Required to prevent Java initialization errors.
 COPY --from=installer /gwn/bin/jre/conf/ /gwn/bin/jre/conf/
 
-# Copy vendor defaults for runtime initialization.
+# Vendor defaults for runtime initialization.
 COPY --from=installer /export/defaults/data/ /opt/gwn-defaults/data/
 COPY --from=installer /export/defaults/conf/ /opt/gwn-defaults/conf/
 
@@ -171,19 +164,54 @@ RUN chmod 755 \
       /usr/local/bin/pki-bootstrap \
       /usr/local/bin/configure-public-url
 
-# Verify SSH privilege-separation prerequisites at build time.
+# ------------------------------------------------------------
+# Fix SSH host key permissions at runtime.
+#
+# /gwn/conf is mounted from a Kubernetes PVC.
+# Image build-time chmod would not affect persisted files.
+#
+# Grandstream's SSHD rejects private host keys with group
+# permissions such as 0660.
+#
+# The wrapper runs before the original entrypoint.
+# ------------------------------------------------------------
+
+RUN cat > /usr/local/bin/gwn-runtime-entrypoint <<'EOF'
+#!/bin/bash
+set -euo pipefail
+
+SSH_DIR="/gwn/conf/sshd"
+
+if [ -d "$SSH_DIR" ]; then
+    shopt -s nullglob
+
+    for key in "$SSH_DIR"/ssh_host_*_key; do
+        if [ -f "$key" ] && [ ! -L "$key" ]; then
+            chmod 600 "$key"
+            echo "Corrected SSH host key permissions: $key"
+        fi
+    done
+fi
+
+exec /usr/local/bin/entrypoint "$@"
+EOF
+
+RUN chmod 755 /usr/local/bin/gwn-runtime-entrypoint
+
+# Verify SSH prerequisites.
 RUN set -eu; \
     getent passwd sshd; \
     getent group sshd; \
     test -x /gwn/bin/sshd/sshd; \
     test -f /opt/gwn-defaults/conf/sshd/sshd_config_temp; \
-    test -d /var/empty/sshd
+    test -d /var/empty/sshd; \
+    test -x /usr/local/bin/gwn-runtime-entrypoint
 
 # GWN Manager web interface and device communication.
 EXPOSE 8443/tcp 10014/tcp 8000/tcp
 
 STOPSIGNAL SIGTERM
 
-ENTRYPOINT ["/usr/local/bin/entrypoint"]
+ENTRYPOINT ["/usr/local/bin/gwn-runtime-entrypoint"]
 
 LABEL org.opencontainers.image.description="EXPERIMENTAL - not verified for clean bootstrap or redistribution"
