@@ -216,7 +216,12 @@ spec:
               mountPath: /gwn/data
             - name: conf
               mountPath: /gwn/conf
+            - name: backup
+              mountPath: /gwn_backup
       volumes:
+        - name: backup
+          emptyDir:
+            sizeLimit: 2Gi
         - name: java-memory
           configMap:
             name: gwn-java-memory

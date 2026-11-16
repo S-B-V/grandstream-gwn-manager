@@ -11,8 +11,20 @@ shutdown(){
 trap 'shutdown 0' TERM INT
 [[ -s /gwn/conf/gwn.conf ]] || { echo 'Config volume not initialized' >&2; exit 1; }
 [[ -e /gwn/data/.pki-bootstrap-complete ]] || { echo 'PKI not bootstrapped' >&2; exit 1; }
-# Apply the same memory budget outside Kubernetes (including Docker CI).
-# Service login shells discard JVM environment variables; configure java_bin.
+
+# GWN Manager writes manual backups to /gwn_backup.
+# In Kubernetes this is a pod-scoped emptyDir, not the data PVC.
+# An emptyDir starts owned by root; allow the vendor's UID 1000 to write.
+[[ -d /gwn_backup && ! -L /gwn_backup ]] || {
+  echo 'Backup path /gwn_backup must be a directory, not a symlink' >&2; exit 1;
+}
+chown 1000:1000 /gwn_backup
+chmod 0770 /gwn_backup
+runuser -u gwn -- test -w /gwn_backup || {
+  echo 'Backup destination /gwn_backup is not writable by gwn' >&2; exit 1;
+}
+
+# Service login shells discard container JVM environment variables.
 grep -q '^java_bin=' /gwn/conf/gwn.conf
 if ! grep -qx 'java_bin=/gwn/conf/java-memory-limited' /gwn/conf/gwn.conf; then
   if [[ ! -e /gwn/conf/gwn.conf.before-memory-profile ]]; then
