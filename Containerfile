@@ -1,6 +1,6 @@
 # Experimental community packaging.
 # Do not publish without authorization and security review.
-FROM almalinux:9 AS installer
+FROM almalinux:10 AS installer
 
 ARG GWN_VERSION=1.1.39.8
 ARG GWN_SHA256
@@ -48,7 +48,7 @@ RUN set -eu; \
       --exclude='*.jks' --exclude='*private-key*' \
       -cf - . | tar -C /export/defaults/conf -xf -
 
-FROM almalinux:9
+FROM almalinux:10
 
 RUN groupadd -g 1000 gwn && \
     useradd -u 1000 -g 1000 -d /gwn -s /bin/bash -M gwn
