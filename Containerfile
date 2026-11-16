@@ -99,6 +99,7 @@ RUN set -eu; \
 
 FROM almalinux:9
 
+# GWN Manager application account.
 RUN groupadd -g 1000 gwn && \
     useradd \
       -u 1000 \
@@ -106,6 +107,23 @@ RUN groupadd -g 1000 gwn && \
       -d /gwn \
       -s /bin/bash \
       -M gwn
+
+# Grandstream's bundled SSH daemon requires a dedicated
+# unprivileged account for privilege separation.
+#
+# This is required when GWNRC is enabled (gwnrc_enable=1).
+# Do not install the distribution OpenSSH server:
+# GWN Manager provides its own binary at /gwn/bin/sshd/sshd.
+RUN groupadd --system sshd && \
+    useradd --system \
+      --gid sshd \
+      --home-dir /var/empty/sshd \
+      --shell /sbin/nologin \
+      --no-create-home \
+      sshd && \
+    mkdir -p /var/empty/sshd && \
+    chown root:root /var/empty/sshd && \
+    chmod 755 /var/empty/sshd
 
 RUN dnf -y upgrade --refresh && \
     dnf -y install \
@@ -152,6 +170,14 @@ RUN chmod 755 \
       /usr/local/bin/healthcheck \
       /usr/local/bin/pki-bootstrap \
       /usr/local/bin/configure-public-url
+
+# Verify SSH privilege-separation prerequisites at build time.
+RUN set -eu; \
+    getent passwd sshd; \
+    getent group sshd; \
+    test -x /gwn/bin/sshd/sshd; \
+    test -f /opt/gwn-defaults/conf/sshd/sshd_config_temp; \
+    test -d /var/empty/sshd
 
 # GWN Manager web interface and device communication.
 EXPOSE 8443/tcp 10014/tcp 8000/tcp
