@@ -1,174 +1,299 @@
+
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: gwn-manager
   namespace: gwn-manager
+
 spec:
   serviceName: gwn-manager-web
   replicas: 1
+
   updateStrategy:
     type: OnDelete
+
   selector:
     matchLabels:
       app: gwn-manager
+
   template:
     metadata:
       labels:
         app: gwn-manager
+
     spec:
       terminationGracePeriodSeconds: 90
       automountServiceAccountToken: false
+
       securityContext:
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
+
+      # -------------------------------------------------------
+      # Initialize persistent volumes and PKI
+      # -------------------------------------------------------
       initContainers:
-      - name: initialize-pvcs-and-pki
-        image: ghcr.io/s-b-v/grandstream-gwn-manager:1.1.39.8
-        imagePullPolicy: IfNotPresent
-        command:
-        - /bin/bash
-        - -euo
-        - pipefail
-        - -c
-        env:
-        - name: GWN_ACCESS_ADDRESS
-          value: 192.0.2.15
-        - name: GWN_PUBLIC_HOST
-          value: gwn-ui.localhost.local
-        - name: GWN_PUBLIC_HTTPS_PORT
-          value: '443'
-        args:
-        - "trap 'rc=$?; echo \"BOOTSTRAP FAILED: line ${LINENO}, exit ${rc}\" >&2'\
-          \ ERR\nshopt -s nullglob dotglob\necho \"STEP 1: Check PVC state\"\ndata=(/gwn/data/*)\n\
-          conf=(/gwn/conf/*)\nif (( ${#data[@]} == 0 && ${#conf[@]} == 0 )); then\n\
-          \  echo 'Initializing fresh GWN Manager volumes'\n  echo 'STEP 2: Verify\
-          \ image defaults'\n  test ! -e /opt/gwn-defaults/data/mysql\n  test -d /opt/gwn-defaults/data/mysql_default/data\n\
-          \  echo 'STEP 3: Copy data defaults'\n  cp -av /opt/gwn-defaults/data/.\
-          \ /gwn/data/ > /dev/null\n  echo 'STEP 3: Data defaults copied'\n  echo\
-          \ 'STEP 4: Copy configuration defaults'\n  cp -av /opt/gwn-defaults/conf/.\
-          \ /gwn/conf/ > /dev/null\n  echo 'STEP 4: Configuration defaults copied'\n\
-          \  test ! -e /gwn/data/mysql\n  echo 'STEP 5: Initialize active MariaDB'\n\
-          \  cp -a /gwn/data/mysql_default /gwn/data/mysql\n  echo 'STEP 6: Configure\
-          \ public URL'\n  /usr/local/bin/configure-public-url\n  echo 'STEP 7: Generate\
-          \ PKI'\n  /usr/local/bin/pki-bootstrap --fresh\n  echo 'STEP 8: Set volume\
-          \ ownership'\n  chown -R 1000:1000 /gwn/data /gwn/conf\n  echo 'STEP 9:\
-          \ Verify initialized volumes'\n  test -d /gwn/data/mysql/data\n  test -s\
-          \ /gwn/conf/gwn.conf\n  test -s /gwn/conf/nginx/ssl.pem\n  test -e /gwn/data/.pki-bootstrap-complete\n\
-          \  echo 'Fresh bootstrap completed'\nelif [[ -e /gwn/data/.pki-bootstrap-complete\
-          \ &&\n        -d /gwn/data/mysql/data &&\n        -s /gwn/conf/gwn.conf\
-          \ &&\n        -s /gwn/conf/gwn/local_env.cfg &&\n        -s /gwn/conf/nginx/ssl.pem\
-          \ ]]; then\n  echo 'Existing initialized volumes; preserving data and certificates'\n\
-          else\n  echo 'Partial initialization detected; refusing to overwrite persistent\
-          \ data' >&2\n  echo 'DATA entries:' >&2; find /gwn/data -mindepth 1 -maxdepth\
-          \ 1 -printf '%f\\n' >&2\n  echo 'CONF entries:' >&2; find /gwn/conf -mindepth\
-          \ 1 -maxdepth 1 -printf '%f\\n' >&2\n  exit 1\nfi\n\necho 'Configure public\
-          \ web and API URLs on existing or fresh PVCs'\n/usr/local/bin/configure-public-url\n\
-          \n# Preserve vendor PKI for other subsystems; use projected cert-manager\
-          \ TLS only\n# for the Nginx web server.\necho 'Install cert-manager HTTPS\
-          \ certificate links'\ntest -s /run/gwn-backend-tls/tls.crt\ntest -s /run/gwn-backend-tls/tls.key\n\
-          ln -sfn /run/gwn-backend-tls/tls.crt /gwn/conf/nginx/ssl.pem\nln -sfn /run/gwn-backend-tls/tls.key\
-          \ /gwn/conf/nginx/ssl.key\n\necho 'Configure Java memory budget for the\
-          \ 4 GiB container'\ngrep -q '^java_bin=' /gwn/conf/gwn.conf\nif ! grep -qx\
-          \ 'java_bin=/gwn/conf/java-memory-limited' /gwn/conf/gwn.conf; then\n  if\
-          \ [[ ! -e /gwn/conf/gwn.conf.before-memory-profile ]]; then\n    cp -p /gwn/conf/gwn.conf\
-          \ /gwn/conf/gwn.conf.before-memory-profile\n    chmod 600 /gwn/conf/gwn.conf.before-memory-profile\n\
-          \  fi\nfi\ninstall -o 1000 -g 1000 -m 0755 \\\n  /opt/gwn-memory/java-memory-limited\
-          \ /gwn/conf/java-memory-limited\nsed -i 's|^java_bin=.*|java_bin=/gwn/conf/java-memory-limited|'\
-          \ /gwn/conf/gwn.conf\n"
-        securityContext:
-          runAsUser: 0
-          allowPrivilegeEscalation: false
-        volumeMounts:
-        - name: data
-          mountPath: /gwn/data
-        - name: conf
-          mountPath: /gwn/conf
-        - name: java-memory
-          mountPath: /opt/gwn-memory
-          readOnly: true
-        - name: backend-tls
-          mountPath: /run/gwn-backend-tls
-          readOnly: true
+        - name: initialize-pvcs-and-pki
+          image: ghcr.io/s-b-v/grandstream-gwn-manager:latest
+          imagePullPolicy: Always
+
+          command: [/bin/bash, -euo, pipefail, -c]
+
+          env:
+            - name: GWN_ACCESS_ADDRESS
+              value: "192.0.2.15"
+            - name: GWN_PUBLIC_HOST
+              value: "gwn-ui.localhost.local"
+            - name: GWN_PUBLIC_HTTPS_PORT
+              value: "443"
+
+          args:
+            - |-
+              trap 'rc=$?; echo "BOOTSTRAP FAILED: line ${LINENO}, exit ${rc}" >&2' ERR
+              shopt -s nullglob dotglob
+
+              # -------------------------------------------------
+              # STEP 1: Check persistent volume initialization
+              # -------------------------------------------------
+              echo "STEP 1: Check PVC state"
+
+              data=(/gwn/data/*)
+              conf=(/gwn/conf/*)
+
+              if (( ${#data[@]} == 0 && ${#conf[@]} == 0 )); then
+
+                echo "Initializing fresh GWN Manager volumes"
+
+                # STEP 2: Verify image defaults
+                echo "STEP 2: Verify image defaults"
+                test ! -e /opt/gwn-defaults/data/mysql
+                test -d /opt/gwn-defaults/data/mysql_default/data
+
+                # STEP 3: Copy application data defaults
+                echo "STEP 3: Copy data defaults"
+                cp -av /opt/gwn-defaults/data/. /gwn/data/ > /dev/null
+                echo "STEP 3: Data defaults copied"
+
+                # STEP 4: Copy configuration defaults
+                echo "STEP 4: Copy configuration defaults"
+                cp -av /opt/gwn-defaults/conf/. /gwn/conf/ > /dev/null
+                echo "STEP 4: Configuration defaults copied"
+
+                # STEP 5: Initialize MariaDB
+                test ! -e /gwn/data/mysql
+                echo "STEP 5: Initialize active MariaDB"
+                cp -a /gwn/data/mysql_default /gwn/data/mysql
+
+                # STEP 6: Configure public URL
+                echo "STEP 6: Configure public URL"
+                /usr/local/bin/configure-public-url
+
+                # STEP 7: Generate PKI
+                echo "STEP 7: Generate PKI"
+                /usr/local/bin/pki-bootstrap --fresh
+
+                # STEP 8: Set volume ownership
+                echo "STEP 8: Set volume ownership"
+                chown -R 1000:1000 /gwn/data /gwn/conf
+
+                # STEP 9: Verify initialization
+                echo "STEP 9: Verify initialized volumes"
+                test -d /gwn/data/mysql/data
+                test -s /gwn/conf/gwn.conf
+                test -s /gwn/conf/nginx/ssl.pem
+                test -e /gwn/data/.pki-bootstrap-complete
+
+                echo "Fresh bootstrap completed"
+
+              elif [[ -e /gwn/data/.pki-bootstrap-complete &&
+                      -d /gwn/data/mysql/data &&
+                      -s /gwn/conf/gwn.conf &&
+                      -s /gwn/conf/gwn/local_env.cfg &&
+                      -s /gwn/conf/nginx/ssl.pem ]]; then
+
+                echo "Existing initialized volumes; preserving data and certificates"
+
+              else
+                echo "Partial initialization detected; refusing to overwrite persistent data" >&2
+
+                echo "DATA entries:" >&2
+                find /gwn/data -mindepth 1 -maxdepth 1 -printf '%f\n' >&2
+
+                echo "CONF entries:" >&2
+                find /gwn/conf -mindepth 1 -maxdepth 1 -printf '%f\n' >&2
+
+                exit 1
+              fi
+
+              # -------------------------------------------------
+              # Configure public URLs
+              # -------------------------------------------------
+              echo "Configure public web and API URLs on existing or fresh PVCs"
+              /usr/local/bin/configure-public-url
+
+              # -------------------------------------------------
+              # Configure cert-manager TLS for Nginx
+              # Preserve vendor PKI for other GWN subsystems
+              # -------------------------------------------------
+              echo "Install cert-manager HTTPS certificate links"
+
+              test -s /run/gwn-backend-tls/tls.crt
+              test -s /run/gwn-backend-tls/tls.key
+
+              ln -sfn /run/gwn-backend-tls/tls.crt /gwn/conf/nginx/ssl.pem
+              ln -sfn /run/gwn-backend-tls/tls.key /gwn/conf/nginx/ssl.key
+
+              # -------------------------------------------------
+              # Configure Java memory budget
+              # -------------------------------------------------
+              echo "Configure Java memory budget for the 4 GiB container"
+
+              grep -q '^java_bin=' /gwn/conf/gwn.conf
+
+              if ! grep -qx 'java_bin=/gwn/conf/java-memory-limited' /gwn/conf/gwn.conf; then
+                if [[ ! -e /gwn/conf/gwn.conf.before-memory-profile ]]; then
+                  cp -p /gwn/conf/gwn.conf /gwn/conf/gwn.conf.before-memory-profile
+                  chmod 600 /gwn/conf/gwn.conf.before-memory-profile
+                fi
+              fi
+
+              install -o 1000 -g 1000 -m 0755 \
+                /opt/gwn-memory/java-memory-limited \
+                /gwn/conf/java-memory-limited
+
+              sed -i \
+                's|^java_bin=.*|java_bin=/gwn/conf/java-memory-limited|' \
+                /gwn/conf/gwn.conf
+
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+
+          volumeMounts:
+            - name: data
+              mountPath: /gwn/data
+
+            - name: conf
+              mountPath: /gwn/conf
+
+            - name: java-memory
+              mountPath: /opt/gwn-memory
+              readOnly: true
+
+            - name: backend-tls
+              mountPath: /run/gwn-backend-tls
+              readOnly: true
+
+      # -------------------------------------------------------
+      # GWN Manager application
+      # -------------------------------------------------------
       containers:
-      - name: gwn-manager
-        image: ghcr.io/s-b-v/grandstream-gwn-manager:1.1.39.8
-        imagePullPolicy: IfNotPresent
-        ports:
-        - name: https
-          containerPort: 8443
-          protocol: TCP
-        - name: device-tcp
-          containerPort: 10014
-          protocol: TCP
-        - name: device-http
-          containerPort: 8000
-          protocol: TCP
-        startupProbe:
-          exec:
-            command:
-            - /usr/local/bin/healthcheck
-          periodSeconds: 10
-          failureThreshold: 40
-          timeoutSeconds: 10
-        readinessProbe:
-          exec:
-            command:
-            - /usr/local/bin/healthcheck
-          periodSeconds: 15
-          failureThreshold: 2
-          timeoutSeconds: 10
-        livenessProbe:
-          exec:
-            command:
-            - /usr/local/bin/healthcheck
-          periodSeconds: 30
-          failureThreshold: 3
-          timeoutSeconds: 10
+        - name: gwn-manager
+          image: ghcr.io/s-b-v/grandstream-gwn-manager:latest
+          imagePullPolicy: Always
+
+          ports:
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+
+            - name: device-tcp
+              containerPort: 10014
+              protocol: TCP
+
+            - name: device-http
+              containerPort: 8000
+              protocol: TCP
+
+          # ---------------------------------------------------
+          # Health checks
+          # ---------------------------------------------------
+          startupProbe:
+            exec:
+              command: [/usr/local/bin/healthcheck]
+            periodSeconds: 10
+            failureThreshold: 40
+            timeoutSeconds: 10
+
+          readinessProbe:
+            exec:
+              command: [/usr/local/bin/healthcheck]
+            periodSeconds: 15
+            failureThreshold: 2
+            timeoutSeconds: 10
+
+          livenessProbe:
+            exec:
+              command: [/usr/local/bin/healthcheck]
+            periodSeconds: 30
+            failureThreshold: 3
+            timeoutSeconds: 10
+
+          # ---------------------------------------------------
+          # Resources
+          # ---------------------------------------------------
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              memory: 4Gi
+
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+
+          # ---------------------------------------------------
+          # Application volumes
+          # ---------------------------------------------------
+          volumeMounts:
+            - name: data
+              mountPath: /gwn/data
+
+            - name: conf
+              mountPath: /gwn/conf
+
+            - name: backup
+              mountPath: /gwn_backup
+
+            - name: backend-tls
+              mountPath: /run/gwn-backend-tls
+              readOnly: true
+
+      # -------------------------------------------------------
+      # Ephemeral and projected volumes
+      # -------------------------------------------------------
+      volumes:
+        - name: backup
+          emptyDir:
+            sizeLimit: 2Gi
+
+        - name: java-memory
+          configMap:
+            name: gwn-java-memory
+            defaultMode: 0444
+
+        - name: backend-tls
+          secret:
+            secretName: gwn-backend-tls
+            defaultMode: 0440
+
+  # ---------------------------------------------------------
+  # Persistent volumes
+  # ---------------------------------------------------------
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
         resources:
           requests:
-            cpu: 500m
-            memory: 1Gi
-          limits:
-            memory: 4Gi
-        securityContext:
-          runAsUser: 0
-          allowPrivilegeEscalation: false
-        volumeMounts:
-        - name: data
-          mountPath: /gwn/data
-        - name: conf
-          mountPath: /gwn/conf
-        - name: backup
-          mountPath: /gwn_backup
-        - name: backend-tls
-          mountPath: /run/gwn-backend-tls
-          readOnly: true
-      volumes:
-      - name: backup
-        emptyDir:
-          sizeLimit: 2Gi
-      - name: java-memory
-        configMap:
-          name: gwn-java-memory
-          defaultMode: 292
-      - name: backend-tls
-        secret:
-          secretName: gwn-backend-tls
-          defaultMode: 288
-  volumeClaimTemplates:
-  - metadata:
-      name: data
-    spec:
-      accessModes:
-      - ReadWriteOnce
-      resources:
-        requests:
-          storage: 10Gi
-  - metadata:
-      name: conf
-    spec:
-      accessModes:
-      - ReadWriteOnce
-      resources:
-        requests:
-          storage: 2Gi
+            storage: 10Gi
+
+    - metadata:
+        name: conf
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 2Gi
